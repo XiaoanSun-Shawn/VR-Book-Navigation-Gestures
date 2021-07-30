@@ -1,0 +1,43 @@
+  <div class="container">
+    <video class="input_video"></video>
+    <canvas class="output_canvas" width="1280px" height="720px"></canvas>
+    <div class="loading">
+      <div class="spinner"></div>
+      <div class="message">
+        Loading
+      </div>
+    </div>
+    <a class="abs logo" href="http://www.mediapipe.dev" target="_blank">
+      <div style="display: flex;align-items: center;bottom: 0;right: 10px;">
+        <img class="logo" src="logo_white.png" alt="" style="
+          height: 50px;">
+        <span class="title">MediaPipe</span>
+      </div>
+    </a>
+    <div class="shoutout">
+      <div>
+        <p>landmark1 location</p>
+        <p id = "output1">Wait for data</p>
+        <p>landmark2 location</p>
+        <p id = "output2">Wait for data</p>
+        <p> related location</p>
+        <p id = "output3">Wait for data</p>
+        <p id = "output4">Distance</p>
+        <p id = "output5"> num of Page</p>
+        <p id = "output6"> Direction</p>
+        <p id = "output7"> Direction</p>
+        <p id = "output8"> Bookmark State</p>
+        <p id = "output9"> Bookmark Page</p>
+      </div>
+    </div>
+    <div class="page_display">
+      <div>
+        <p id = "page_show"> Current Page</p>
+      </div>
+    </div>
+    <div class="book">
+      <img src ="https://github.com/YourDearFather/material/blob/main/blankbook.png?raw=true" height="150" width="200"/>
+    </div>
+  </div>
+  <div class="control-panel">
+  </div>

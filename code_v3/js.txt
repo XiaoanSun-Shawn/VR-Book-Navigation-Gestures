@@ -1,0 +1,342 @@
+// Our input frames will come from here.
+const videoElement =
+    document.getElementsByClassName('input_video')[0];
+const canvasElement =
+    document.getElementsByClassName('output_canvas')[0];
+const controlsElement =
+    document.getElementsByClassName('control-panel')[0];
+const canvasCtx = canvasElement.getContext('2d');
+
+// We'll add this to our control panel later, but we'll save it here so we can
+// call tick() each time the graph runs.
+const fpsControl = new FPS();
+var last_position_x = 1;
+var last_position_y = 1;
+var current_page = 0;
+var maximal_page = 50;
+var minimal_page = 0;
+var flip_page;
+var bookmark = 0;
+var isBookmarked = false;
+var last_position_y_bookmark = 1;
+var flip_position = 0.65// Where to trigger the flip function
+var bookmark_position = 0.3// Where to trigger the bookmark function
+var bookmarkTriggerDistance = 0.03;
+
+// Optimization: Turn off animated spinner after its hiding animation is done.
+const spinner = document.querySelector('.loading');
+spinner.ontransitionend = () => {
+  spinner.style.display = 'none';
+};
+
+// The main function
+function onResults(results) {
+  // Hide the spinner.
+  document.body.classList.add('loaded');
+
+  // Update the frame rate.
+  fpsControl.tick();
+
+  // Draw the overlays.
+  canvasCtx.save();
+  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  canvasCtx.drawImage(
+      results.image, 0, 0, canvasElement.width, canvasElement.height);
+  if (results.multiHandLandmarks && results.multiHandedness) {
+    for (let index = 0; index < results.multiHandLandmarks.length; index++) {
+        const classification = results.multiHandedness[index];
+        const isRightHand = classification.label === 'Right';
+        const landmarks = results.multiHandLandmarks[index];   
+
+        // Draw graph of the hand
+        drawConnectors(
+            canvasCtx, landmarks, HAND_CONNECTIONS,
+            {color: isRightHand ? '#00FF00' : '#FF0000'}),
+
+        drawLandmarks(canvasCtx, landmarks, {
+          color: isRightHand ? '#00FF00' : '#FF0000',
+          fillColor: isRightHand ? '#FF0000' : '#00FF00',
+          radius: (x) => {
+            return lerp(x.from.z, -0.15, .1, 10, 1);
+          }
+        });
+
+  //-------------------------------------
+        var l1 = landmarks[8];//index_tip
+        var l2 = landmarks[4];//thumb_tip
+        var l3 = landmarks[12];//middle_tip
+        var l4 = landmarks[9];//middle_mcp
+        var l5 = landmarks[0];//Wrist_bottom
+        var l6 = landmarks[16];//ring_tip
+        var l7 = landmarks[14];// ring_2nd_middle
+        var l8 = landmarks[6]; // index_second
+        var distance = calculateDistance(l1,l2);
+   // show distance between fingers
+        // console.log(distance);  
+      
+  // check the flip mode      
+        var mode = modelRecognition(l3,l4)
+        showInfo("output4",mode);
+  // show l[8],l[4] location      
+        showLocation("output1",l1);
+        showLocation("output2",l2);
+        showLocation("output3",relatedLocation(l1,l2));
+        let page = modeJudgement(mode,distance);
+ 
+  // show move directions
+        let direction_X = moveDirection_x(l5,last_position_x);
+        let direction_Y = moveDirection_y(l5,last_position_y)
+        showInfo("output6",direction_X);
+        showInfo("output7",direction_Y);
+  // calculate current page and display
+       
+        if (flipTrigger(l5,l1,l2,l8)){
+          current_page = pageFlipDetection(page,direction_X);
+        }
+        showInfo("page_show","Page " + current_page);
+      
+  // Do bookmark trigger
+      storeOrReleaseBookMark(l3,l6,l7,direction_X,direction_Y);
+      
+  // show current_page
+        console.log(page);
+        console.log(current_page);
+  
+  // show bookmark state
+        showInfo("output8","bookmark state: " + isBookmarked);
+        showInfo("output9","bookmark page: " + bookmark);
+
+  // update the last_position
+        last_position_x = l5.x;//writs_x
+        last_position_y = l5.y;//wrist_y
+        last_position_y_bookmark = l3.y;//middle_y
+      }
+  }
+  canvasCtx.restore();  
+}
+
+const hands = new Hands({locateFile: (file) => {
+  return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.1/${file}`;
+}});
+//------------------------------------
+hands.onResults(onResults);
+
+/**
+ * Instantiate a camera. We'll feed each frame we receive into the solution.
+ */
+const camera = new Camera(videoElement, {
+  onFrame: async () => {
+    await hands.send({image: videoElement});
+  },
+  width: 1280,
+  height: 720
+});
+camera.start();
+
+// Present a control panel through which the user can manipulate the solution
+// options.
+new ControlPanel(controlsElement, {
+      selfieMode: true,
+      maxNumHands: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+      pauseCamera: false,
+    })
+    .add([
+      new StaticText({title: 'MediaPipe Hands'}),
+      fpsControl,
+      new Toggle({title: 'Selfie Mode', field: 'selfieMode'}),
+      new Toggle({ title: "Pause Camera", field: "pauseCamera" }),
+      new Slider(
+          {title: 'Max Number of Hands', field: 'maxNumHands', range: [1, 4], step: 1}),
+      new Slider({
+        title: 'Min Detection Confidence',
+        field: 'minDetectionConfidence',
+        range: [0, 1],
+        step: 0.01
+      }),
+      new Slider({
+        title: 'Min Tracking Confidence',
+        field: 'minTrackingConfidence',
+        range: [0, 1],
+        step: 0.01
+      }),
+    ])
+    .on(options => {
+      videoElement.classList.toggle('selfie', options.selfieMode);
+      hands.setOptions(options);
+      options.pauseCamera ? camera.video.pause() : camera.start();
+    });
+
+// window.alert('ho');
+//-----------------------------------------------
+// Function list
+function calculateDistance(a,b){
+  var l1_x = a.x;
+  var l2_x = b.x;
+  var l1_y = a.y;
+  var l2_y = b.y;
+  var l1_z = a.z;
+  var l2_z = b.z;
+  var distance = Math.pow(l1_x-l2_x,2)+
+      Math.pow(l1_y-l2_y,2);
+  var depth = (l1_z+l2_z)/2;
+  if (Math.abs(depth)<0.01){depth = 0.01;}
+  var distance_with_ratio = distance/depth;
+  return distance_with_ratio;
+}
+
+function showLocation(elementID,landmark){
+  document.getElementById(elementID).innerHTML = "(" + landmark.x.toFixed(2)+","+ landmark.y.toFixed(2) + ","+landmark.z.toFixed(2)+")";
+}
+
+function showInfo(elementID,text){
+  document.getElementById(elementID).innerHTML =text;
+}
+
+function relatedLocation(referencePoint,aimPoint){
+  var x = aimPoint.x - referencePoint.x;
+  var y = aimPoint.y - referencePoint.y;
+  var z = aimPoint.z - referencePoint.z;
+  
+  return {x:x,y:y,z:z};
+}
+
+function getPreviousLocation(landmark){
+  return landmark;
+}
+
+function getNumberOfPages(distance){
+  let dis_int = Math.round(Math.abs(distance/0.5));
+  if(dis_int>4){
+    dis_int = 4;
+  }
+  switch(dis_int){
+    case 1:     
+      break;
+    case 2:
+      flip_page = 20;
+      break;
+    case 3:
+      break;
+    case 4:
+      flip_page = 30;
+      break;
+    default:
+      flip_page = 10;
+      break;
+  }
+  return flip_page;
+}
+
+function modelRecognition(landmark_1,landmark_2){
+  if(landmark_1.y<landmark_2.y){
+    return "normal_flip";
+  }
+  else{
+    return "long_flip"
+  }
+}
+
+function moveDirection_x(landmark,last_x){
+  if (Math.abs(landmark.x-last_x)<=0.01){
+    return "stay"
+  }
+  else{
+    if (landmark.x<last_x){
+      return "move_left"
+    }
+    else{
+      return "move_right"
+    }
+  }
+}
+
+function moveDirection_y(landmark,last_y){
+  if (Math.abs(landmark.y-last_y)<=0.01){
+    return "stay"
+  }
+  else{
+    if (landmark.y<last_y){
+      return "move_up"
+    }
+    else{
+      return "move_down"
+    }
+  }
+}
+
+function modeJudgement(mode,distance){
+  let page_num = 0;
+  if (mode == "long_flip"){
+      page_num = getNumberOfPages(distance);
+      showInfo("output5", page_num +　' pages');
+    }
+    else if(mode == "normal_flip"){
+      page_num = 1;
+      showInfo("output5", page_num　+　' pages');
+    }
+  return page_num;
+}
+
+function pageFlipDetection(page,direction){
+  let current_page_local = current_page;
+  if (direction == "stay"){
+    return current_page_local;
+  }
+  else{
+    if(direction == "move_left"){
+      current_page_local = current_page_local-page;
+      if(current_page_local < minimal_page){
+        current_page_local = minimal_page;
+        console.log('You reach the first page');
+      }
+    }
+    else if(direction == "move_right"){
+      current_page_local = current_page_local+page;
+      if(current_page_local > maximal_page){
+         current_page_local = maximal_page;
+        console.log('You reach the last page');
+      }
+    }
+    return current_page_local;
+  }
+}
+
+function flipTrigger(landmark_wrist,landmark_tip,landmark_thumb,landmark_tip_sec){
+  let y_tip = landmark_tip.y;
+  let y_thumb = landmark_thumb.y;
+  let y_tip_sec = landmark_tip_sec.y
+  if((landmark_wrist.x -flip_position)*(last_position_x-flip_position)<0 && (y_tip < y_thumb)&&(y_tip<y_tip_sec)){
+    return true;
+  }
+  else{
+    return false;
+  }
+}
+
+function bookMarkTrigger(landmark_middle_tip,landmark_ring_tip,landmark_ring_second,x_state,y_state){
+  if(landmark_ring_tip.y>landmark_ring_second.y && landmark_middle_tip.y<landmark_ring_second.y && x_state == "stay"&& y_state == "stay"){
+    return true;
+  }
+  else{
+    return false;
+  } 
+}
+
+function storeOrReleaseBookMark(landmark_middle_tip,landmark_ring_tip,landmark_ring_second,x_state,y_state){
+  const isTriggered = bookMarkTrigger(landmark_middle_tip,landmark_ring_tip,landmark_ring_second,x_state,y_state)
+  if (isTriggered){
+    if((last_position_y_bookmark - landmark_middle_tip.y> bookmarkTriggerDistance)&(last_position_y_bookmark-bookmark_position)*(landmark_middle_tip.y-bookmark_position)<0){
+        if(isBookmarked == false){
+          bookmark = current_page;
+        }
+        else{
+          current_page = bookmark;
+        }
+        isBookmarked = !isBookmarked;
+      }
+    return true;
+    }
+  return false;
+}
